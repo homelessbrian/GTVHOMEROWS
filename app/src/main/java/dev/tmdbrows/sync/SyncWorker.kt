@@ -61,7 +61,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         programId = prev?.programId
                     )
                 }
-                val published = ChannelPublisher.publishPrograms(ctx, cfg.copy(channelId = channelId), channelId, items)
+                val published = ChannelPublisher.publishPrograms(
+                    ctx, cfg.copy(channelId = channelId), channelId, items,
+                    artPattern = prefs.artPattern, artEnabled = prefs.artEnabled
+                )
                 db.items().deleteNotIn(cfg.id, published.map { it.tmdbId }.ifEmpty { listOf(-1L) })
                 db.items().upsertAll(published)
                 tiles += published.size

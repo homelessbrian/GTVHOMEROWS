@@ -13,6 +13,8 @@ import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
 import dev.tmdbrows.db.CachedItem
 import dev.tmdbrows.db.ListConfig
+import dev.tmdbrows.tmdb.ArtStyle
+import dev.tmdbrows.tmdb.Artwork
 import dev.tmdbrows.tmdb.TmdbClient
 
 /** Creates/updates Android TV home-screen channels (rows) and their programs (tiles). */
@@ -61,7 +63,14 @@ object ChannelPublisher {
      * Replace the channel's programs with [items], reusing existing program rows where possible.
      * Returns the items with their programId filled in.
      */
-    fun publishPrograms(context: Context, config: ListConfig, channelId: Long, items: List<CachedItem>): List<CachedItem> {
+    fun publishPrograms(
+        context: Context,
+        config: ListConfig,
+        channelId: Long,
+        items: List<CachedItem>,
+        artPattern: String = "",
+        artEnabled: Boolean = false
+    ): List<CachedItem> {
         val resolver = context.contentResolver
         val existing = existingPrograms(context, channelId) // internalProviderId -> programId
         val keep = mutableSetOf<Long>()
@@ -69,7 +78,7 @@ object ChannelPublisher {
 
         items.forEachIndexed { index, item ->
             val key = "${item.mediaType}:${item.tmdbId}"
-            val program = buildProgram(config, channelId, item, index)
+            val program = buildProgram(config, channelId, item, index, artPattern, artEnabled)
             val values = program.toContentValues()
             val programId = existing[key]?.also { id ->
                 resolver.update(TvContractCompat.buildPreviewProgramUri(id), values, null, null)
@@ -86,7 +95,14 @@ object ChannelPublisher {
         return out
     }
 
-    private fun buildProgram(config: ListConfig, channelId: Long, item: CachedItem, weight: Int): PreviewProgram {
+    private fun buildProgram(
+        config: ListConfig,
+        channelId: Long,
+        item: CachedItem,
+        weight: Int,
+        artPattern: String,
+        artEnabled: Boolean
+    ): PreviewProgram {
         val intentUri = Uri.parse("tmdbrows://open?config=${config.id}&type=${item.mediaType}&tmdb=${item.tmdbId}")
         val b = PreviewProgram.Builder()
             .setChannelId(channelId)
@@ -97,16 +113,16 @@ object ChannelPublisher {
             .setInternalProviderId("${item.mediaType}:${item.tmdbId}")
             .setWeight(Int.MAX_VALUE - weight) // preserve list order
 
-        val poster = TmdbClient.poster(item.posterPath)
-        val backdrop = TmdbClient.backdrop(item.backdropPath)
-        if (poster != null) {
-            b.setPosterArtUri(Uri.parse(poster))
-            b.setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3)
-        } else if (backdrop != null) {
-            b.setPosterArtUri(Uri.parse(backdrop))
-            b.setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9)
+        val style = ArtStyle.from(config.artStyle)
+        val art = Artwork.urlFor(item, style, artPattern, artEnabled)
+        if (art != null) {
+            b.setPosterArtUri(Uri.parse(art))
+            b.setPosterArtAspectRatio(
+                if (style == ArtStyle.LANDSCAPE) TvContractCompat.PreviewPrograms.ASPECT_RATIO_16_9
+                else TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3
+            )
         }
-        if (backdrop != null) b.setThumbnailUri(Uri.parse(backdrop))
+        TmdbClient.backdrop(item.backdropPath)?.let { b.setThumbnailUri(Uri.parse(it)) }
         item.releaseDate?.let { b.setReleaseDate(it) }
         item.rating?.let {
             b.setReviewRatingStyle(TvContractCompat.PreviewPrograms.REVIEW_RATING_STYLE_PERCENTAGE)

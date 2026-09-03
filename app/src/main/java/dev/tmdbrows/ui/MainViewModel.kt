@@ -6,10 +6,14 @@ import androidx.lifecycle.viewModelScope
 import dev.tmdbrows.channels.ChannelPublisher
 import dev.tmdbrows.data.Prefs
 import dev.tmdbrows.db.AppDatabase
+import dev.tmdbrows.db.CustomTarget
 import dev.tmdbrows.db.ListConfig
 import dev.tmdbrows.launch.TargetApp
 import dev.tmdbrows.launch.Targets
 import dev.tmdbrows.sync.SyncScheduler
+import dev.tmdbrows.tmdb.ArtStyle
+import dev.tmdbrows.tmdb.Artwork
+import dev.tmdbrows.tmdb.CatalogEntry
 import dev.tmdbrows.tmdb.DiscoverSpec
 import dev.tmdbrows.tmdb.Genre
 import dev.tmdbrows.tmdb.MediaKind
@@ -40,6 +44,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val apiKey = MutableStateFlow(prefs.tmdbKey)
     val keyStatus = MutableStateFlow(if (prefs.tmdbKey.isBlank()) "No key saved" else "Key saved")
     val targets = MutableStateFlow<List<TargetApp>>(emptyList())
+    val customTargets: StateFlow<List<CustomTarget>> =
+        db.customTargets().observeAll().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val defaultTarget = MutableStateFlow(prefs.defaultTargetPackage)
     val syncMessage = MutableStateFlow(prefs.lastSyncMessage)
     val busy = MutableStateFlow(false)
@@ -62,7 +68,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val genreNames: Map<Int, String> get() = genres.value.associate { it.id to it.name }
 
     fun refresh() {
-        targets.value = Targets.installed(ctx)
+        targets.value = Targets.all(ctx, customTargets.value)
         if (defaultTarget.value.isBlank() && targets.value.isNotEmpty()) {
             setDefaultTarget(targets.value.first().packageName)
         }
@@ -137,6 +143,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- Builder -------------------------------------------------------------
+
+    /** Non-null while the ready-made rows browser is open. */
+    val catalogOpen = MutableStateFlow(false)
+
+    fun openCatalog() { if (requireKey()) catalogOpen.value = true }
+    fun closeCatalog() { catalogOpen.value = false }
+
+    fun addFromCatalog(entry: CatalogEntry) = viewModelScope.launch {
+        if (!requireKey()) return@launch
+        busy.value = true
+        try {
+            val base = ListConfig(
+                displayName = entry.title, catalogId = entry.id, artStyle = entry.artStyle.id,
+                targetPackage = "", sortOrder = db.configs().nextSortOrder()
+            )
+            val cfg = when {
+                entry.preset != null -> base.copy(
+                    kind = SourceKind.PRESET.name, presetId = entry.preset.id,
+                    presetMediaKind = entry.presetKind.api, presetMaxItems = 40
+                )
+                entry.spec != null -> base.copy(
+                    kind = SourceKind.DISCOVER.name, discoverJson = entry.spec.toJson()
+                )
+                else -> return@launch
+            }
+            publish(cfg)
+        } catch (e: Exception) {
+            toast.value = e.message ?: "Failed to add row"
+        } finally { busy.value = false }
+    }
 
     fun openBuilder(existing: ListConfig? = null) {
         if (!requireKey()) return
@@ -245,6 +281,143 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             syncMessage.value = prefs.lastSyncMessage
         }
     }
+
+    // ---- Artwork --------------------------------------------------------------
+
+    val artPattern = MutableStateFlow(prefs.artPattern)
+    val artEnabled = MutableStateFlow(prefs.artEnabled)
+    val artCheckResult = MutableStateFlow("")
+
+    fun setArtPattern(v: String) { artPattern.value = v; artCheckResult.value = "" }
+
+    fun setArtEnabled(enabled: Boolean) {
+        if (enabled && artPattern.value.isBlank()) {
+            toast.value = "Paste an artwork URL first"; return
+        }
+        prefs.artEnabled = enabled
+        artEnabled.value = enabled
+        if (prefs.tmdbKey.isNotBlank()) SyncScheduler.syncNow(ctx)
+    }
+
+    fun saveArtPattern() = viewModelScope.launch {
+        prefs.artPattern = artPattern.value
+        if (artPattern.value.isBlank()) {
+            prefs.artEnabled = false
+            artEnabled.value = false
+        }
+        artCheckResult.value = "Saved"
+        if (artEnabled.value) SyncScheduler.syncNow(ctx)
+    }
+
+    /** Fetches the pattern for a known title so the user finds out now, not after a sync. */
+    fun checkArtPattern() = viewModelScope.launch {
+        val pattern = artPattern.value
+        if (pattern.isBlank()) { artCheckResult.value = "Paste a URL first"; return@launch }
+        val sample = Targets.sampleItem()
+        val url = Artwork.fillPattern(pattern, sample)
+        if (url == null) { artCheckResult.value = "Pattern needs an id the sample doesn't have"; return@launch }
+        artCheckResult.value = "Checking…"
+        val outcome = withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    instanceFollowRedirects = true
+                }
+                val code = conn.responseCode
+                val type = conn.contentType ?: ""
+                conn.disconnect()
+                code to type
+            }
+        }
+        artCheckResult.value = outcome.fold(
+            onSuccess = { (code, type) ->
+                when {
+                    code in 200..299 && type.startsWith("image") -> "Works — returned an image"
+                    code in 200..299 -> "Returned $type, not an image. Check the URL."
+                    else -> "Provider returned HTTP $code"
+                }
+            },
+            onFailure = { "Couldn't reach it: ${it.message}" }
+        )
+    }
+
+    fun setRowArtStyle(cfg: ListConfig, style: ArtStyle) = viewModelScope.launch {
+        db.configs().update(cfg.copy(artStyle = style.id))
+        SyncScheduler.syncNow(ctx, cfg.id)
+    }
+
+    // ---- Custom targets -------------------------------------------------------
+
+    /** Non-null while the custom-app editor is open; holds the row being edited or a blank one. */
+    val targetEditor = MutableStateFlow<CustomTarget?>(null)
+    val targetTestResult = MutableStateFlow("")
+    val installedApps = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+
+    fun openTargetEditor(existing: CustomTarget? = null) {
+        installedApps.value = Targets.launchableApps(ctx)
+        targetTestResult.value = ""
+        targetEditor.value = existing ?: CustomTarget(packageName = "", label = "", template = "")
+    }
+
+    fun closeTargetEditor() {
+        targetEditor.value = null
+        targetTestResult.value = ""
+    }
+
+    fun updateTargetDraft(transform: (CustomTarget) -> CustomTarget) {
+        targetEditor.value = targetEditor.value?.let(transform)
+        targetTestResult.value = ""
+    }
+
+    /** Fires the template against a known title so the user sees straight away if it works. */
+    fun testTarget() {
+        val draft = targetEditor.value ?: return
+        if (draft.packageName.isBlank()) { targetTestResult.value = "Pick an app first"; return }
+        if (draft.template.isBlank()) { targetTestResult.value = "Enter a URI template first"; return }
+        val sample = Targets.sampleItem()
+        val uri = Targets.fillTemplate(draft.template, sample)
+        if (uri == null) { targetTestResult.value = "Template needs an id the sample doesn't have"; return }
+        val app = TargetApp(draft.packageName, draft.label, template = draft.template)
+        val intent = Targets.intentFor(app, sample) ?: run {
+            targetTestResult.value = "Couldn't build a link from that template"; return
+        }
+        try {
+            ctx.startActivity(intent)
+            targetTestResult.value = "Opened $uri — check whether the app landed on Inception"
+        } catch (e: Exception) {
+            targetTestResult.value = "${draft.label.ifBlank { draft.packageName }} rejected $uri"
+        }
+    }
+
+    fun saveTarget() = viewModelScope.launch {
+        val draft = targetEditor.value ?: return@launch
+        if (draft.packageName.isBlank() || draft.template.isBlank()) {
+            toast.value = "Pick an app and enter a template"; return@launch
+        }
+        val label = draft.label.ifBlank {
+            installedApps.value.firstOrNull { it.first == draft.packageName }?.second ?: draft.packageName
+        }
+        db.customTargets().upsert(draft.copy(label = label))
+        closeTargetEditor()
+        refresh()
+    }
+
+    fun deleteTarget(t: CustomTarget) = viewModelScope.launch {
+        db.customTargets().delete(t)
+        closeTargetEditor()
+        refresh()
+    }
+
+    // ---- Row previews ----------------------------------------------------------
+
+    fun previewFor(configId: Long) = db.items().observePreview(configId, 7)
+    fun countFor(configId: Long) = db.items().observeCount(configId)
+
+    /** Which screen the nav rail is showing. */
+    val destination = MutableStateFlow(Dest.ROWS)
+    fun go(d: Dest) { destination.value = d }
 
     fun approvalHandled() { channelToApprove.value = null }
     fun toastShown() { toast.value = null }

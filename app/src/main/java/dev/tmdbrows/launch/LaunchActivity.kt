@@ -42,8 +42,9 @@ class LaunchActivity : Activity() {
             }
             if (item == null) { fail("Item not found — try syncing again"); return@launch }
 
-            val target = Targets.find(ctx, pkg) ?: Targets.installed(ctx).firstOrNull()
-            if (target == null) { fail("No supported app installed (Stremio or Nuvio)"); return@launch }
+            val custom = withContext(Dispatchers.IO) { AppDatabase.get(ctx).customTargets().getAll() }
+            val target = Targets.find(ctx, custom, pkg) ?: Targets.all(ctx, custom).firstOrNull()
+            if (target == null) { fail("No app configured to open titles in"); return@launch }
 
             val launch = Targets.intentFor(target, item)
             if (launch == null) { fail("Can't open this item in ${target.label}"); return@launch }

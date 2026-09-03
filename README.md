@@ -10,7 +10,11 @@ Builds rows on the Android TV / Google TV home screen from TMDB, in three flavou
   top rated, in theatres, upcoming, airing today, on the air.
 - **TMDB lists** — a specific list by URL or ID, exactly as before.
 
-Selecting a tile opens the title in Stremio or Nuvio — configurable globally and per row.
+Selecting a tile opens the title in Stremio, Nuvio, or any app you define a link template for
+— configurable globally and per row.
+
+Each row can use tall posters (2:3) or landscape tiles (16:9). Poster rows can optionally pull
+artwork from a third-party provider such as btttr.cc or RPDB instead of TMDB.
 
 ## Build the APK (no local tools needed)
 
@@ -18,6 +22,16 @@ Selecting a tile opens the title in Stremio or Nuvio — configurable globally a
 2. Upload this whole folder (drag-and-drop in the browser works — make sure `.github/workflows/build.yml` is included).
 3. Open the **Actions** tab. The "Build APK" workflow runs automatically on push (~4 min).
 4. When it finishes, scroll to **Artifacts** and download `TmdbRows-debug-apk`. Unzip it to get `app-debug.apk`.
+
+## About the keystore
+
+`debug.keystore` in the repo root is committed on purpose. GitHub Actions runners are fresh each build,
+so without a fixed key every APK would be signed differently and Android would refuse to install
+an update over the previous version. It's a throwaway debug key with the standard `android`
+password — fine for sideloading to your own device, not for publishing anywhere.
+
+If the file is missing the build still succeeds, falling back to Gradle's auto-generated debug
+key; the only consequence is having to uninstall the app before each update.
 
 ## Install on the TV
 
@@ -51,6 +65,8 @@ If a row doesn't show up, check the launcher's channel/row settings and enable i
 - `launch/LaunchActivity.kt` — invisible trampoline that a tile opens; looks up the row's target app and forwards a deep link:
   - Stremio: `stremio:///detail/movie/tt…/tt…` or `stremio:///detail/series/tt…`
   - Nuvio: `nuvio://tmdb/movie/<id>` or `nuvio://tmdb/series/<id>`
+- `tmdb/Artwork.kt` — decides each tile's image URL: a custom provider pattern when enabled and fillable, TMDB posters or backdrops otherwise.
+- `tmdb/Catalog.kt` — the 32 ready-made rows.
 - `ui/` — Compose settings screen plus the D-pad-friendly filter builder (chips for multi-select, ◀/▶ steppers instead of text entry for numbers).
 
 The API key is stored with `EncryptedSharedPreferences` and never leaves the device except in requests to TMDB.

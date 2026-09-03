@@ -12,16 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,15 +41,15 @@ fun BuilderScreen(vm: MainViewModel) {
     val busy by vm.busy.collectAsStateWithLifecycle()
 
     Column(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        Modifier.fillMaxSize().background(T.bg)
             .verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 32.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (editing == null) "New filtered row" else "Edit row",
-                fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)
+                color = T.text, fontSize = 26.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f)
             )
-            Text(count, color = if (count.startsWith("no titles")) Color(0xFFFF7043) else Accent, fontSize = 18.sp)
+            Text(count, color = if (count.startsWith("no titles")) T.warn else T.accent, fontSize = 15.sp)
         }
 
         FieldLabel("Content type")
@@ -65,7 +60,7 @@ fun BuilderScreen(vm: MainViewModel) {
         }
 
         FieldLabel("Include genres")
-        if (genres.isEmpty()) Text("Loading genres…", color = Color.DarkGray, fontSize = 13.sp)
+        if (genres.isEmpty()) Text("Loading genres…", color = T.textFaint, fontSize = 13.sp)
         ChipGroup {
             genres.forEach { g ->
                 Chip(g.name, g.id in spec.genresInclude) {
@@ -119,7 +114,7 @@ fun BuilderScreen(vm: MainViewModel) {
         if (spec.minRating != null) {
             Text(
                 "Also requiring at least ${spec.minVotes ?: 100} votes, so obscure titles with a handful of ratings don't dominate.",
-                color = Color.DarkGray, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)
+                color = T.textFaint, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
             )
             Spacer(Modifier.height(6.dp))
             Stepper(
@@ -132,7 +127,7 @@ fun BuilderScreen(vm: MainViewModel) {
         FieldLabel("Runtime (minutes)")
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Column {
-                Text("At least", color = Color.Gray, fontSize = 13.sp)
+                    Text("At least", color = T.textDim, fontSize = 12.sp)
                 Stepper(
                     value = spec.runtimeMin?.toString() ?: "Any",
                     onDecrement = { vm.updateSpec { s -> s.copy(runtimeMin = ((s.runtimeMin ?: 90) - 10).coerceAtLeast(0).takeIf { it > 0 }) } },
@@ -141,7 +136,7 @@ fun BuilderScreen(vm: MainViewModel) {
                 )
             }
             Column {
-                Text("At most", color = Color.Gray, fontSize = 13.sp)
+                    Text("At most", color = T.textDim, fontSize = 12.sp)
                 Stepper(
                     value = spec.runtimeMax?.toString() ?: "Any",
                     onDecrement = { vm.updateSpec { s -> s.copy(runtimeMax = ((s.runtimeMax ?: 130) - 10).coerceAtLeast(10)) } },
@@ -152,7 +147,7 @@ fun BuilderScreen(vm: MainViewModel) {
         }
 
         FieldLabel("Streaming on (${spec.watchRegion})")
-        if (providers.isEmpty()) Text("Loading providers…", color = Color.DarkGray, fontSize = 13.sp)
+        if (providers.isEmpty()) Text("Loading providers…", color = T.textFaint, fontSize = 13.sp)
         ChipGroup {
             providers.forEach { p ->
                 Chip(p.name, p.id in spec.providers) {
@@ -161,8 +156,7 @@ fun BuilderScreen(vm: MainViewModel) {
             }
         }
         if (spec.providers.isNotEmpty()) {
-            Text("Matches titles on any of the selected services.", color = Color.DarkGray, fontSize = 13.sp,
-                modifier = Modifier.padding(top = 4.dp))
+            Hint("Matches titles on any of the selected services.")
         }
 
         FieldLabel("Original language")
@@ -189,11 +183,8 @@ fun BuilderScreen(vm: MainViewModel) {
         }
 
         FieldLabel("Row name")
-        OutlinedTextField(
-            value = name, onValueChange = { vm.builderName.value = it }, singleLine = true,
-            label = { Text("Leave blank to name it from the filters") },
-            modifier = Modifier.width(620.dp).tvFocus()
-        )
+        DarkField(name, { vm.builderName.value = it }, "Leave blank to name it from the filters",
+            Modifier.width(560.dp))
 
         FieldLabel("Open items in")
         ChipGroup {
@@ -202,11 +193,11 @@ fun BuilderScreen(vm: MainViewModel) {
         }
 
         Spacer(Modifier.height(28.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { vm.saveBuilder() }, enabled = !busy, modifier = Modifier.tvFocus()) {
-                Text(if (editing == null) "Create row" else "Save changes")
+        PillRow {
+            Pill(if (editing == null) "Create row" else "Save changes", primary = true) {
+                if (!busy) vm.saveBuilder()
             }
-            OutlinedButton(onClick = { vm.closeBuilder() }, modifier = Modifier.tvFocus()) { Text("Cancel") }
+            Pill("Cancel") { vm.closeBuilder() }
         }
         Spacer(Modifier.height(40.dp))
     }

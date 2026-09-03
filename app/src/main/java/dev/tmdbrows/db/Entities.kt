@@ -17,6 +17,10 @@ data class ListConfig(
     val presetId: String = "",
     val presetMediaKind: String = "movie",
     val presetMaxItems: Int = 40,
+    /** Catalog entry this row was created from, if any. */
+    val catalogId: String = "",
+    /** "poster" or "landscape" — the tile shape for this row. */
+    val artStyle: String = "poster",
     val displayName: String,
     /** Package name of the app to open items in; empty = use the global default. */
     val targetPackage: String = "",
@@ -41,4 +45,14 @@ data class CachedItem(
     val imdbId: String?,
     /** Row id of the PreviewProgram published for this item, if any. */
     val programId: Long? = null
+)
+
+/** A user-defined app to open titles in, with its own URI template. */
+@Entity(tableName = "custom_target")
+data class CustomTarget(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val label: String,
+    /** URI with {imdb}, {tmdb}, {type}, {tvtype}, {title}, {year} placeholders. */
+    val template: String
 )

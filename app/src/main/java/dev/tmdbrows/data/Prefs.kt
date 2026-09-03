@@ -25,6 +25,15 @@ class Prefs(context: Context) {
         get() = prefs.getString(KEY_DEFAULT_TARGET, "") ?: ""
         set(v) = prefs.edit().putString(KEY_DEFAULT_TARGET, v).apply()
 
+    /** URL pattern for a third-party artwork provider (btttr.cc, RPDB, ...). */
+    var artPattern: String
+        get() = prefs.getString(KEY_ART_PATTERN, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_ART_PATTERN, v.trim()).apply()
+
+    var artEnabled: Boolean
+        get() = prefs.getBoolean(KEY_ART_ENABLED, false)
+        set(v) = prefs.edit().putBoolean(KEY_ART_ENABLED, v).apply()
+
     var lastSyncMessage: String
         get() = prefs.getString(KEY_LAST_SYNC, "Never synced") ?: ""
         set(v) = prefs.edit().putString(KEY_LAST_SYNC, v).apply()
@@ -33,5 +42,7 @@ class Prefs(context: Context) {
         private const val KEY_TMDB = "tmdb_key"
         private const val KEY_DEFAULT_TARGET = "default_target"
         private const val KEY_LAST_SYNC = "last_sync"
+        private const val KEY_ART_PATTERN = "art_pattern"
+        private const val KEY_ART_ENABLED = "art_enabled"
     }
 }

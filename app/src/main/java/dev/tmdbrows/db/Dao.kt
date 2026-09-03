@@ -32,6 +32,12 @@ interface CachedItemDao {
     @Query("SELECT * FROM cached_item WHERE configId = :configId")
     suspend fun forConfig(configId: Long): List<CachedItem>
 
+    @Query("SELECT * FROM cached_item WHERE configId = :configId LIMIT :limit")
+    fun observePreview(configId: Long, limit: Int): Flow<List<CachedItem>>
+
+    @Query("SELECT COUNT(*) FROM cached_item WHERE configId = :configId")
+    fun observeCount(configId: Long): Flow<Int>
+
     @Query("SELECT * FROM cached_item WHERE configId = :configId AND tmdbId = :tmdbId AND mediaType = :type")
     suspend fun find(configId: Long, tmdbId: Long, type: String): CachedItem?
 
@@ -43,4 +49,18 @@ interface CachedItemDao {
 
     @Query("DELETE FROM cached_item WHERE configId = :configId AND tmdbId NOT IN (:keep)")
     suspend fun deleteNotIn(configId: Long, keep: List<Long>)
+}
+
+@Dao
+interface CustomTargetDao {
+    @Query("SELECT * FROM custom_target ORDER BY label")
+    fun observeAll(): Flow<List<CustomTarget>>
+
+    @Query("SELECT * FROM custom_target ORDER BY label")
+    suspend fun getAll(): List<CustomTarget>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(t: CustomTarget): Long
+
+    @Delete suspend fun delete(t: CustomTarget)
 }
