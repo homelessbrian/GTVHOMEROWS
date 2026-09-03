@@ -3,7 +3,7 @@ package dev.tmdbrows.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.border
@@ -44,7 +44,7 @@ fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 /** Wrapping row of chips — genres and providers can be long lists. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ChipGroup(content: @Composable FlowRow.() -> Unit) {
+fun ChipGroup(content: @Composable FlowRowScope.() -> Unit) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
