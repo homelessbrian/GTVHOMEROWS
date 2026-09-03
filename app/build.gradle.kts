@@ -16,14 +16,31 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    signingConfigs {
+        // A fixed keystore checked into the repo, so every CI build is signed identically.
+        // Without this, each GitHub Actions runner generates a fresh debug key and Android
+        // refuses to install the update over the previous version.
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes {
+        debug { signingConfig = signingConfigs.getByName("debug") }
         release { isMinifyEnabled = false }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        // FlowRow/FlowRowScope are still marked experimental; opting in here covers
+        // every call site instead of annotating each one.
+        freeCompilerArgs = freeCompilerArgs + "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi"
+    }
     buildFeatures { compose = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
