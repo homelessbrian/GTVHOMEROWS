@@ -7,7 +7,12 @@ import dev.tmdbrows.channels.ChannelPublisher
 import dev.tmdbrows.data.Prefs
 import dev.tmdbrows.db.AppDatabase
 import dev.tmdbrows.db.CachedItem
+import dev.tmdbrows.tmdb.DiscoverSpec
+import dev.tmdbrows.tmdb.MediaKind
+import dev.tmdbrows.tmdb.Preset
+import dev.tmdbrows.tmdb.SourceKind
 import dev.tmdbrows.tmdb.TmdbClient
+import dev.tmdbrows.tmdb.TmdbItem
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -31,12 +36,20 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         var tiles = 0
         for (cfg in configs) {
             try {
-                val list = client.fetchList(cfg.tmdbListId)
+                val fetched: List<TmdbItem> = when (SourceKind.valueOf(cfg.kind)) {
+                    SourceKind.LIST -> client.fetchList(cfg.tmdbListId).items
+                    SourceKind.DISCOVER -> client.discover(DiscoverSpec.fromJson(cfg.discoverJson))
+                    SourceKind.PRESET -> client.preset(
+                        Preset.from(cfg.presetId),
+                        MediaKind.from(cfg.presetMediaKind),
+                        cfg.presetMaxItems
+                    )
+                }
                 val channelId = ChannelPublisher.ensureChannel(ctx, cfg)
                 if (cfg.channelId != channelId) db.configs().update(cfg.copy(channelId = channelId))
 
                 val cached = db.items().forConfig(cfg.id).associateBy { "${it.mediaType}:${it.tmdbId}" }
-                val items = list.items.map { t ->
+                val items = fetched.map { t ->
                     val prev = cached["${t.mediaType}:${t.tmdbId}"]
                     // Only hit external_ids once per item; IMDb ids don't change.
                     val imdb = prev?.imdbId ?: client.imdbId(t.tmdbId, t.mediaType)

@@ -92,11 +92,13 @@ class TmdbClient(private val credential: String) {
         return TmdbListInfo(first.optString("name", "TMDB List"), all)
     }
 
-    private fun parseItems(arr: JSONArray): List<TmdbItem> {
+    private fun parseItems(arr: JSONArray, kindHint: MediaKind? = null): List<TmdbItem> {
         val out = mutableListOf<TmdbItem>()
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
-            val rawType = o.optString("media_type", if (o.has("first_air_date")) "tv" else "movie")
+            val rawType = o.optString("media_type").ifBlank {
+                kindHint?.api ?: if (o.has("first_air_date")) "tv" else "movie"
+            }
             val type = if (rawType == "tv") "series" else "movie"
             val title = o.optString("title").ifBlank { o.optString("name") }
             if (title.isBlank()) continue
@@ -118,6 +120,74 @@ class TmdbClient(private val credential: String) {
     suspend fun imdbId(tmdbId: Long, mediaType: String): String? = withContext(Dispatchers.IO) {
         val path = if (mediaType == "series") "/3/tv/$tmdbId/external_ids" else "/3/movie/$tmdbId/external_ids"
         runCatching { get(path).optString("imdb_id").takeIf { it.startsWith("tt") } }.getOrNull()
+    }
+
+
+    // ---- Discover / presets / reference data -------------------------------
+
+    /** Runs a /discover query and returns up to spec.pages * 20 items. */
+    suspend fun discover(spec: DiscoverSpec): List<TmdbItem> = withContext(Dispatchers.IO) {
+        val path = "/3/discover/${spec.mediaKind.api}"
+        val out = mutableListOf<TmdbItem>()
+        for (page in 1..spec.pages) {
+            val q = spec.toQuery().toMutableMap()
+            q["page"] = page.toString()
+            val body = get(path, q)
+            val items = parseItems(body.optJSONArray("results") ?: JSONArray(), spec.mediaKind)
+            out += items
+            if (items.isEmpty() || page >= body.optInt("total_pages", 1)) break
+        }
+        out.take(spec.maxItems)
+    }
+
+    /** Total number of titles matching a spec — used for the live preview in the builder. */
+    suspend fun countMatches(spec: DiscoverSpec): Int = withContext(Dispatchers.IO) {
+        val q = spec.toQuery().toMutableMap()
+        q["page"] = "1"
+        get("/3/discover/${spec.mediaKind.api}", q).optInt("total_results", 0)
+    }
+
+    /** One of TMDB's ready-made lists (trending, popular, top rated, ...). */
+    suspend fun preset(preset: Preset, kind: MediaKind, maxItems: Int): List<TmdbItem> = withContext(Dispatchers.IO) {
+        val path = when (preset) {
+            Preset.TRENDING_WEEK -> "/3/trending/${kind.api}/week"
+            Preset.TRENDING_DAY -> "/3/trending/${kind.api}/day"
+            Preset.POPULAR -> "/3/${kind.api}/popular"
+            Preset.TOP_RATED -> "/3/${kind.api}/top_rated"
+            Preset.NOW_PLAYING -> "/3/movie/now_playing"
+            Preset.UPCOMING -> "/3/movie/upcoming"
+            Preset.AIRING_TODAY -> "/3/tv/airing_today"
+            Preset.ON_THE_AIR -> "/3/tv/on_the_air"
+        }
+        val out = mutableListOf<TmdbItem>()
+        val pages = ((maxItems + 19) / 20).coerceIn(1, 5)
+        for (page in 1..pages) {
+            val body = get(path, mapOf("page" to page.toString()))
+            val items = parseItems(body.optJSONArray("results") ?: JSONArray(), kind)
+            out += items
+            if (items.isEmpty() || page >= body.optInt("total_pages", 1)) break
+        }
+        out.take(maxItems)
+    }
+
+    suspend fun genres(kind: MediaKind): List<Genre> = withContext(Dispatchers.IO) {
+        val arr = get("/3/genre/${kind.api}/list").optJSONArray("genres") ?: JSONArray()
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.getJSONObject(i)
+            val name = o.optString("name")
+            if (name.isBlank()) null else Genre(o.optInt("id"), name)
+        }
+    }
+
+    /** Streaming services available in [region], ordered by TMDB's display priority. */
+    suspend fun watchProviders(kind: MediaKind, region: String): List<Provider> = withContext(Dispatchers.IO) {
+        val arr = get("/3/watch/providers/${kind.api}", mapOf("watch_region" to region))
+            .optJSONArray("results") ?: JSONArray()
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.getJSONObject(i)
+            val name = o.optString("provider_name")
+            if (name.isBlank()) null else Triple(o.optInt("provider_id"), name, o.optInt("display_priority", 9999))
+        }.sortedBy { it.third }.map { Provider(it.first, it.second) }
     }
 
     companion object {

@@ -3,11 +3,20 @@ package dev.tmdbrows.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-/** One configured TMDB list == one launcher row. */
+/** One configured row on the home screen. Source is a TMDB list, a Discover query, or a preset. */
 @Entity(tableName = "list_config")
 data class ListConfig(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val tmdbListId: String,
+    /** "LIST", "DISCOVER" or "PRESET" */
+    val kind: String = "LIST",
+    /** Set when kind == LIST. */
+    val tmdbListId: String = "",
+    /** JSON-encoded DiscoverSpec; set when kind == DISCOVER. */
+    val discoverJson: String = "",
+    /** Preset id and media kind; set when kind == PRESET. */
+    val presetId: String = "",
+    val presetMediaKind: String = "movie",
+    val presetMaxItems: Int = 40,
     val displayName: String,
     /** Package name of the app to open items in; empty = use the global default. */
     val targetPackage: String = "",
