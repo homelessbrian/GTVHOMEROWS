@@ -16,19 +16,23 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    // A fixed keystore checked into the repo root, so every CI build is signed identically —
+    // otherwise each GitHub Actions runner generates a fresh debug key and Android refuses to
+    // install the update over the previous version. If the file is absent the build still
+    // succeeds using Gradle's auto-generated debug key; you just have to uninstall before
+    // each update.
+    val fixedKeystore = rootProject.file("debug.keystore")
     signingConfigs {
-        // A fixed keystore checked into the repo, so every CI build is signed identically.
-        // Without this, each GitHub Actions runner generates a fresh debug key and Android
-        // refuses to install the update over the previous version.
-        getByName("debug") {
-            storeFile = rootProject.file("keystore/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        if (fixedKeystore.exists()) {
+            getByName("debug") {
+                storeFile = fixedKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
     buildTypes {
-        debug { signingConfig = signingConfigs.getByName("debug") }
         release { isMinifyEnabled = false }
     }
     compileOptions {
